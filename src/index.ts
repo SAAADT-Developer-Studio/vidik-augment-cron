@@ -1,25 +1,77 @@
-interface Env {}
+import { getDb } from "./drizzle/connect";
+import { articleSocialPost, socialPost } from "./drizzle/schema";
+import { linkRedditPosts as getRedditPosts } from "./reddit";
+
+export type Platform = "reddit" | "twitter"; // or other things
+
+export interface PlatformMetadata {
+  title: string;
+  subreddit: string;
+  postedDate: Date;
+  author?: string;
+}
+
+export type Post = {
+  url: string;
+  platform: Platform;
+  postedAt: Date;
+  platformMetadata: PlatformMetadata;
+  links: string[];
+};
+
 export default {
-	async scheduled(
-		controller: ScheduledController,
-		env: Env,
-		ctx: ExecutionContext,
-	) {
-		// Write code for updating your API
-		switch (controller.cron) {
-			case "*/3 * * * *":
-				// Every three minutes
-				await updateAPI();
-				break;
-			case "*/10 * * * *":
-				// Every ten minutes
-				await updateAPI2();
-				break;
-			case "*/45 * * * *":
-				// Every forty-five minutes
-				await updateAPI3();
-				break;
-		}
-		console.log("cron processed");
-	},
+  async scheduled(
+    controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ) {
+    const db = await getDb(env.HYPERDRIVE.connectionString);
+    const posts: Post[] = [];
+    posts.push(...(await getRedditPosts()));
+
+    const allLinks = posts.flatMap((post) => post.links);
+
+    const articles = await db.query.article.findMany({
+      where: (article, { inArray }) => inArray(article.url, allLinks),
+      columns: { id: true, url: true },
+    });
+
+    const linkedPosts: (Post & { articleIds: number[] })[] = [];
+
+    for (const post of posts) {
+      const articleIds = articles
+        .filter((article) => post.links.includes(article.url))
+        .map((a) => a.id);
+      if (articleIds.length > 0) {
+        linkedPosts.push({ ...post, articleIds });
+      }
+    }
+
+    const socialPosts = await db
+      .insert(socialPost)
+      .values(
+        linkedPosts.map((post) => {
+          return {
+            platform: post.platform,
+            url: post.url,
+            postedAt: post.postedAt.toISOString(),
+            createdAt: new Date().toISOString(),
+            platformMetadata: JSON.stringify(post.platformMetadata),
+          };
+        }),
+      )
+      .returning({ id: socialPost.id });
+
+    const connections = linkedPosts.flatMap((post, idx) => {
+      const socialPostId = socialPosts[idx].id;
+      return post.articleIds.map((articleId) => ({
+        socialPostId,
+        articleId,
+      }));
+    });
+
+    await db.insert(articleSocialPost).values(connections);
+
+    console.log("Cron processed!");
+  },
 };
