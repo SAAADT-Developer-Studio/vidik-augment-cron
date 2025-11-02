@@ -1,3 +1,4 @@
+import { url } from "inspector";
 import { getDb } from "./drizzle/connect";
 import { articleSocialPost, socialPost } from "./drizzle/schema";
 import { linkRedditPosts as getRedditPosts } from "./reddit";
@@ -61,10 +62,11 @@ export default {
         }),
       )
       .onConflictDoNothing() // Add conflict handling for unique url
-      .returning({ id: socialPost.id });
+      .returning({ id: socialPost.id, url: socialPost.url });
 
-    const connections = linkedPosts.flatMap((post, idx) => {
-      const socialPostId = socialPosts[idx].id;
+    const connections = linkedPosts.flatMap((post) => {
+      const socialPostId = socialPosts.find((sp) => sp.url === post.url)?.id;
+      if (!socialPostId) return [];
       return post.articleIds.map((articleId) => ({
         socialPostId,
         articleId,
