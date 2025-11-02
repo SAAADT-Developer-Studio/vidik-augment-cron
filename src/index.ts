@@ -60,6 +60,7 @@ export default {
           };
         }),
       )
+      .onConflictDoNothing() // Add conflict handling for unique url
       .returning({ id: socialPost.id });
 
     const connections = linkedPosts.flatMap((post, idx) => {
