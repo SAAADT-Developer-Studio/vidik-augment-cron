@@ -128,9 +128,13 @@ export async function linkRedditPosts(): Promise<Post[]> {
     console.error(`Failed to fetch subreddit ${index}:`, result.reason);
   });
 
-  console.log(`Extracted ${allPosts.length} total posts from Reddit`);
-
-  return Array.from(
+  const redditPosts = Array.from(
     new Map(allPosts.map((post) => [post.url, post])).values(),
   ).filter((post) => post.links.length > 0);
+
+  console.log(`Extracted ${allPosts.length} total posts from Reddit`);
+  console.log(
+    `Extracted ${redditPosts.length} unique posts with links from Reddit`,
+  );
+  return redditPosts;
 }
