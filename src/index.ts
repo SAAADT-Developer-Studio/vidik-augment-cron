@@ -94,11 +94,17 @@ export default {
       `🔗 Creating ${connections.length} article-social post connections...`,
     );
 
-    await db
-      .insert(articleSocialPost)
-      .values(connections)
-      .onConflictDoNothing();
-    console.log(`✅ Article-social post connections created`);
+    if (connections.length > 0) {
+      await db
+        .insert(articleSocialPost)
+        .values(connections)
+        .onConflictDoNothing();
+      console.log(`✅ Article-social post connections created`);
+    } else {
+      console.log(
+        `⚠️ No new connections to create (all social posts already existed)`,
+      );
+    }
 
     console.log("🎉 Cron job completed successfully!");
     console.log(
