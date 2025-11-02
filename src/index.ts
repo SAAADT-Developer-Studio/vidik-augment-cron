@@ -73,7 +73,10 @@ export default {
       }));
     });
 
-    await db.insert(articleSocialPost).values(connections);
+    await db
+      .insert(articleSocialPost)
+      .values(connections)
+      .onConflictDoNothing();
 
     console.log("Cron processed!");
   },
