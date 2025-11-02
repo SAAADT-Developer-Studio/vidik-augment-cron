@@ -1,4 +1,3 @@
-import { url } from "inspector";
 import { getDb } from "./drizzle/connect";
 import { articleSocialPost, socialPost } from "./drizzle/schema";
 import { linkRedditPosts as getRedditPosts } from "./reddit";
@@ -26,16 +25,22 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ) {
+    console.log("🚀 Cron job started at:", new Date().toISOString());
+
     const db = await getDb(env.HYPERDRIVE.connectionString);
+    console.log("✅ Database connection established");
+
     const posts: Post[] = [];
     posts.push(...(await getRedditPosts()));
 
     const allLinks = posts.flatMap((post) => post.links);
+    console.log(`🔗 Extracted ${allLinks.length} total links from posts`);
 
     const articles = await db.query.article.findMany({
       where: (article, { inArray }) => inArray(article.url, allLinks),
       columns: { id: true, url: true },
     });
+    console.log(`📄 Found ${articles.length} matching articles in database`);
 
     const linkedPosts: (Post & { articleIds: number[] })[] = [];
 
@@ -47,7 +52,17 @@ export default {
         linkedPosts.push({ ...post, articleIds });
       }
     }
+    console.log(`🔗 Created ${linkedPosts.length} posts with article links`);
 
+    if (linkedPosts.length === 0) {
+      console.log("⚠️ No linked posts found, skipping database inserts");
+      console.log("✅ Cron job completed with no updates");
+      return;
+    }
+
+    console.log(
+      `💾 Inserting ${linkedPosts.length} social posts into database...`,
+    );
     const socialPosts = await db
       .insert(socialPost)
       .values(
@@ -63,6 +78,9 @@ export default {
       )
       .onConflictDoNothing() // Add conflict handling for unique url
       .returning({ id: socialPost.id, url: socialPost.url });
+    console.log(
+      `✅ Inserted ${socialPosts.length} new social posts (${linkedPosts.length - socialPosts.length} duplicates skipped)`,
+    );
 
     const connections = linkedPosts.flatMap((post) => {
       const socialPostId = socialPosts.find((sp) => sp.url === post.url)?.id;
@@ -72,12 +90,19 @@ export default {
         articleId,
       }));
     });
+    console.log(
+      `🔗 Creating ${connections.length} article-social post connections...`,
+    );
 
     await db
       .insert(articleSocialPost)
       .values(connections)
       .onConflictDoNothing();
+    console.log(`✅ Article-social post connections created`);
 
-    console.log("Cron processed!");
+    console.log("🎉 Cron job completed successfully!");
+    console.log(
+      `📊 Summary: ${socialPosts.length} posts, ${connections.length} connections`,
+    );
   },
 };
