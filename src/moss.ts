@@ -2,7 +2,7 @@ import { load } from "cheerio";
 import { randomUUID } from "crypto";
 import { getDb } from "./drizzle/connect";
 import { mossData } from "./drizzle/schema";
-console.log("Starting MOSS data fetch...");
+import { DB } from ".";
 
 type MossData = {
   key: string;
@@ -27,11 +27,8 @@ function parseNumber(raw: string): number {
   return Number.isNaN(num) ? 0 : num;
 }
 
-export async function fetchMossData(): Promise<void> {
+export async function fetchMossData(db: DB): Promise<void> {
   try {
-    const db = await getDb(
-      "postgresql://vidik_user:vidik_password@localhost:5432/vidik",
-    );
     const providers = await db.query.newsProvider.findMany();
     const response = await fetch("https://www.moss-soz.si/rezultati/");
     const existingMossDataThisMonthRows = await db.query.mossData.findMany({
