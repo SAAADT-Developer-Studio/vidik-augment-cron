@@ -107,32 +107,31 @@ export async function fetchMossData(db: DB): Promise<void> {
     ) {
       console.log("No new MOSS data to insert for this month.");
       return;
-    } else {
-      await db.insert(mossData).values(
-        data
-          .filter((md) => {
-            console.log(`record for ${md.key} alredy exist for this month`);
-            return !existingProviderKeys.has(md.key);
-          })
-          .map((item) => {
-            console.log(`inserting moss data for provider ${item.key}`);
-            return {
-              id: randomUUID(),
-              createdAt: new Date().toISOString(),
-              providerKey: item.key,
-              website: item.website,
-              publisher: item.publisher,
-              reach: item.reach,
-              reachPercent: item.reachPercent,
-              avgDailyReach: item.avgDailyReach,
-              views: item.views,
-              avgSessionDuration: item.avgSessionDuration,
-              trend: item.trend,
-              rank: item.rank,
-            };
-          }),
-      );
     }
+    await db.insert(mossData).values(
+      data
+        .filter((md) => {
+          console.log(`record for ${md.key} alredy exist for this month`);
+          return !existingProviderKeys.has(md.key);
+        })
+        .map((item) => {
+          console.log(`inserting moss data for provider ${item.key}`);
+          return {
+            id: randomUUID(),
+            createdAt: new Date().toISOString(),
+            providerKey: item.key,
+            website: item.website,
+            publisher: item.publisher,
+            reach: item.reach,
+            reachPercent: item.reachPercent,
+            avgDailyReach: item.avgDailyReach,
+            views: item.views,
+            avgSessionDuration: item.avgSessionDuration,
+            trend: item.trend,
+            rank: item.rank,
+          };
+        }),
+    );
   } catch (error) {
     console.error("Error fetching MOSS data:", error);
   }
