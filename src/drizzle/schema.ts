@@ -1,18 +1,39 @@
 import {
   pgTable,
-  foreignKey,
-  unique,
+  index,
   serial,
-  integer,
   varchar,
-  timestamp,
-  doublePrecision,
   jsonb,
   boolean,
-  primaryKey,
+  timestamp,
+  foreignKey,
+  unique,
+  integer,
+  doublePrecision,
   uuid,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+export const clusterRun = pgTable(
+  "cluster_run",
+  {
+    id: serial().primaryKey().notNull(),
+    algoVersion: varchar("algo_version").notNull(),
+    params: jsonb(),
+    isProduction: boolean("is_production").notNull(),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string",
+    }).notNull(),
+  },
+  (table) => [
+    index("ix_cluster_run_created_at").using(
+      "btree",
+      table.createdAt.asc().nullsLast().op("timestamptz_ops"),
+    ),
+  ],
+);
 
 export const articleCluster = pgTable(
   "article_cluster",
@@ -23,6 +44,10 @@ export const articleCluster = pgTable(
     runId: integer("run_id").notNull(),
   },
   (table) => [
+    index("ix_article_cluster_cluster_id").using(
+      "btree",
+      table.clusterId.asc().nullsLast().op("int4_ops"),
+    ),
     foreignKey({
       columns: [table.articleId],
       foreignColumns: [article.id],
@@ -46,6 +71,28 @@ export const articleCluster = pgTable(
   ],
 );
 
+export const clusterV2 = pgTable(
+  "cluster_v2",
+  {
+    id: serial().primaryKey().notNull(),
+    title: varchar().notNull(),
+    slug: varchar(),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string",
+    }).notNull(),
+    runId: integer("run_id").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.runId],
+      foreignColumns: [clusterRun.id],
+      name: "cluster_v2_run_id_fkey",
+    }).onDelete("cascade"),
+    unique("cluster_v2_slug_key").on(table.slug),
+  ],
+);
+
 export const article = pgTable(
   "article",
   {
@@ -66,8 +113,14 @@ export const article = pgTable(
     imageUrls: varchar("image_urls").array(),
     categories: varchar().array(),
     llmRank: integer("llm_rank"),
+    isPaywalled: boolean("is_paywalled"),
   },
   (table) => [
+    index("ix_article_published_at_news_provider_key").using(
+      "btree",
+      table.publishedAt.asc().nullsLast().op("text_ops"),
+      table.newsProviderKey.asc().nullsLast().op("text_ops"),
+    ),
     foreignKey({
       columns: [table.clusterId],
       foreignColumns: [cluster.id],
@@ -94,39 +147,6 @@ export const newsProvider = pgTable(
   (table) => [
     unique("news_provider_name_key").on(table.name),
     unique("news_provider_url_key").on(table.url),
-  ],
-);
-
-export const clusterRun = pgTable("cluster_run", {
-  id: serial().primaryKey().notNull(),
-  algoVersion: varchar("algo_version").notNull(),
-  params: jsonb(),
-  isProduction: boolean("is_production").notNull(),
-  createdAt: timestamp("created_at", {
-    withTimezone: true,
-    mode: "string",
-  }).notNull(),
-});
-
-export const clusterV2 = pgTable(
-  "cluster_v2",
-  {
-    id: serial().primaryKey().notNull(),
-    title: varchar().notNull(),
-    slug: varchar(),
-    createdAt: timestamp("created_at", {
-      withTimezone: true,
-      mode: "string",
-    }).notNull(),
-    runId: integer("run_id").notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.runId],
-      foreignColumns: [clusterRun.id],
-      name: "cluster_v2_run_id_fkey",
-    }).onDelete("cascade"),
-    unique("cluster_v2_slug_key").on(table.slug),
   ],
 );
 
@@ -166,6 +186,34 @@ export const socialPost = pgTable(
     }).notNull(),
   },
   (table) => [unique("social_post_url_key").on(table.url)],
+);
+
+export const mossData = pgTable(
+  "moss_data",
+  {
+    id: uuid().primaryKey().notNull(),
+    providerKey: varchar("provider_key").notNull(),
+    rank: integer().notNull(),
+    website: varchar().notNull(),
+    publisher: varchar().notNull(),
+    reach: integer().notNull(),
+    reachPercent: doublePrecision("reach_percent").notNull(),
+    avgDailyReach: integer("avg_daily_reach").notNull(),
+    views: integer().notNull(),
+    avgSessionDuration: varchar("avg_session_duration").notNull(),
+    trend: doublePrecision().notNull(),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string",
+    }).notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.providerKey],
+      foreignColumns: [newsProvider.key],
+      name: "moss_data_provider_key_fkey",
+    }),
+  ],
 );
 
 export const alembicVersion = pgTable("alembic_version", {

@@ -1,6 +1,7 @@
 import { getDb } from "./drizzle/connect";
 import { articleSocialPost, socialPost } from "./drizzle/schema";
 import { linkRedditPosts as getRedditPosts } from "./reddit";
+import { fetchMossData } from "./moss-scraper";
 
 export type Platform = "reddit" | "twitter"; // or other things
 
@@ -29,6 +30,13 @@ export default {
 
     const db = await getDb(env.HYPERDRIVE.connectionString);
     console.log("✅ Database connection established");
+
+    const today = new Date();
+    if (today.getDate() === 2) {
+      console.log("📊 Running MOSS data scraper...");
+      await fetchMossData();
+      console.log("✅ MOSS data scraper completed");
+    }
 
     const posts: Post[] = [];
     posts.push(...(await getRedditPosts()));
