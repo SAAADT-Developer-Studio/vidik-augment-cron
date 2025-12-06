@@ -30,7 +30,7 @@ function parseNumber(raw: string): number {
 export async function fetchMossData(db: DB): Promise<void> {
   try {
     const providers = await db.query.newsProvider.findMany();
-    const response = await fetch("https://www.moss-soz.si/rezultati/");
+
     const existingMossDataThisMonthRows = await db.query.mossData.findMany({
       where: (mossData, { gte, lt, and }) =>
         and(
@@ -55,6 +55,8 @@ export async function fetchMossData(db: DB): Promise<void> {
     const existingProviderKeys = new Set(
       existingMossDataThisMonthRows.map((r) => r.providerKey),
     );
+
+    const response = await fetch("https://www.moss-soz.si/rezultati/");
     const html = await response.text();
 
     const $ = load(html);

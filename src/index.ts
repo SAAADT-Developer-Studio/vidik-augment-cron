@@ -3,6 +3,10 @@ import { linkSocialPostsToArticles } from "./linkSocialPostsToArticles";
 import { fetchMossData } from "./moss";
 
 export type DB = Awaited<ReturnType<typeof getDb>>;
+export enum cronTriggers {
+  linkSocialPosts = "*/10 * * * *",
+  fetchMossData = "0 15 2 * *",
+}
 
 export default {
   async scheduled(
@@ -13,7 +17,7 @@ export default {
     const db = await getDb(env.HYPERDRIVE.connectionString);
     console.log("✅ Database connection established");
 
-    if (controller.cron === "*/10 * * * *") {
+    if (controller.cron === cronTriggers.linkSocialPosts) {
       console.log(
         "Cron job linkSocialPosts started at:",
         new Date().toISOString(),
@@ -21,7 +25,7 @@ export default {
       await linkSocialPostsToArticles(db);
     }
 
-    if (controller.cron === "0 15 2 * *") {
+    if (controller.cron === cronTriggers.fetchMossData) {
       console.log(
         "Cron job fetchMossData started at:",
         new Date().toISOString(),
