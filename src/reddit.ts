@@ -1,4 +1,4 @@
-import { PlatformMetadata, Post } from ".";
+import { PlatformMetadata, Post } from "./linkSocialPostsToArticles";
 
 const SUBREDDITS = [
   "slovenia",
