@@ -1,4 +1,5 @@
 import { getDb } from "./drizzle/connect";
+import { deleteOldClusterRuns } from "./deleteOldClusterRuns";
 import { linkSocialPostsToArticles } from "./linkSocialPostsToArticles";
 import { fetchMossData } from "./moss";
 
@@ -6,6 +7,7 @@ export type DB = Awaited<ReturnType<typeof getDb>>;
 export enum cronTriggers {
   linkSocialPosts = "*/10 * * * *",
   fetchMossData = "0 15 2 * *",
+  deleteOldClusterRuns = "0 2 * * *",
 }
 
 export default {
@@ -31,6 +33,14 @@ export default {
         new Date().toISOString(),
       );
       await fetchMossData(db);
+    }
+
+    if (controller.cron === cronTriggers.deleteOldClusterRuns) {
+      console.log(
+        "Cron job deleteOldClusterRuns started at:",
+        new Date().toISOString(),
+      );
+      await deleteOldClusterRuns(db);
     }
   },
 };
