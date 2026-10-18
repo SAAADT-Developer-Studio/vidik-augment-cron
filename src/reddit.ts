@@ -9,17 +9,84 @@ const SUBREDDITS = [
   "slovenija",
 ];
 
-interface RedditPostData {
+// Reddit blocks unauthenticated .json requests, but the Atom feeds are still public.
+// Anonymous feeds allow roughly one request per minute, so all subreddits are fetched
+// as a single multireddit feed (/r/a+b+c), where each entry is labelled with its subreddit.
+const FEED_URL = `https://www.reddit.com/r/${SUBREDDITS.join("+")}/new/.rss?limit=100`;
+
+const USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+
+interface RedditFeedEntry {
   title: string;
-  selftext: string;
-  url: string;
+  subreddit: string;
   permalink: string;
-  domain?: string;
-  created_utc?: number;
+  url: string; // where the post points to (the permalink for text posts)
+  bodyHtml: string;
+  publishedAt: Date;
   author?: string;
-  score?: number;
-  num_comments?: number;
-  [key: string]: unknown;
+}
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+
+/**
+ * Decodes XML/HTML entities (&amp;, &quot;, &#39;, &#x27;, ...)
+ */
+function decodeEntities(text: string): string {
+  return text.replace(
+    /&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi,
+    (_, entity: string) => {
+      const lower = entity.toLowerCase();
+      if (lower.startsWith("#x"))
+        return String.fromCodePoint(parseInt(lower.slice(2), 16));
+      if (lower.startsWith("#"))
+        return String.fromCodePoint(Number(lower.slice(1)));
+      return NAMED_ENTITIES[lower];
+    },
+  );
+}
+
+function getTag(xml: string, tag: string): string | undefined {
+  return xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`))?.[1];
+}
+
+/**
+ * Parses the entries of a subreddit's Atom feed
+ */
+function parseFeed(xml: string): RedditFeedEntry[] {
+  const entries = xml.split("<entry>").slice(1);
+
+  return entries.map((entry) => {
+    const permalink = entry.match(/<link href="([^"]+)"/)?.[1] ?? "";
+    // The content is escaped HTML with a "[link]" anchor pointing to the post's target
+    const contentHtml = decodeEntities(getTag(entry, "content") ?? "");
+    const url =
+      contentHtml.match(/<a href="([^"]+)">\[link\]<\/a>/)?.[1] ?? permalink;
+    const bodyHtml =
+      contentHtml.match(/<!-- SC_OFF -->([\s\S]*?)<!-- SC_ON -->/)?.[1] ?? "";
+    const author = getTag(getTag(entry, "author") ?? "", "name")?.replace(
+      /^\/u\//,
+      "",
+    );
+
+    return {
+      title: decodeEntities(getTag(entry, "title") ?? ""),
+      subreddit: (
+        entry.match(/<category term="([^"]+)"/)?.[1] ?? ""
+      ).toLowerCase(),
+      permalink: decodeEntities(permalink),
+      url: decodeEntities(url),
+      bodyHtml,
+      publishedAt: new Date(getTag(entry, "published") ?? 0),
+      author,
+    };
+  });
 }
 
 /**
@@ -37,29 +104,34 @@ function extractUrlsFromText(text: string): string[] {
 }
 
 /**
+ * Extracts links from the body HTML of a post: anchor hrefs and any plain-text URLs
+ */
+function extractUrlsFromHtml(html: string): string[] {
+  const hrefs = [...html.matchAll(/<a href="([^"]+)"/g)].map((m) =>
+    decodeEntities(m[1]),
+  );
+  const text = decodeEntities(html.replace(/<[^>]+>/g, " "));
+  return [...hrefs, ...extractUrlsFromText(text)];
+}
+
+/**
  * Extracts links from a Reddit post from multiple sources
  */
-function extractLinksFromPost(post: RedditPostData, subreddit: string): Post {
+function extractLinksFromPost(post: RedditFeedEntry): Post {
   const platformMetadata: PlatformMetadata = {
     title: post.title,
-    subreddit,
-    postedDate: new Date((post.created_utc || 0) * 1000),
+    subreddit: post.subreddit,
+    postedDate: post.publishedAt,
     author: post.author,
   };
 
   const urls: string[] = [];
 
   // Extract from title
-  const titleUrls = extractUrlsFromText(post.title);
-  titleUrls.forEach((url) => {
-    urls.push(url);
-  });
+  urls.push(...extractUrlsFromText(post.title));
 
   // Extract from description/selftext
-  const descriptionUrls = extractUrlsFromText(post.selftext);
-  descriptionUrls.forEach((url) => {
-    urls.push(url);
-  });
+  urls.push(...extractUrlsFromHtml(post.bodyHtml));
 
   // Extract the post URL if it's not a Reddit self-post and not already captured
   if (post.url && !post.url.includes("reddit.com")) {
@@ -70,6 +142,8 @@ function extractLinksFromPost(post: RedditPostData, subreddit: string): Post {
   const normalizedUrls = new Set(urls.map((url) => url.replace(/\/$/, "")));
   const normalizedLinks = Array.from(normalizedUrls).filter(
     (url) =>
+      url.startsWith("http") &&
+      !url.includes("reddit.com") &&
       !url.startsWith("https://i.redd.it") &&
       !url.startsWith("https://v.redd.it") &&
       !url.startsWith("https://youtube.com") &&
@@ -78,55 +152,28 @@ function extractLinksFromPost(post: RedditPostData, subreddit: string): Post {
       !url.startsWith("https://x.com"),
   );
 
-  // Construct the full Reddit post URL from the permalink
-  const redditPostUrl = `https://www.reddit.com${post.permalink}`;
-
   return {
-    url: redditPostUrl,
+    url: post.permalink,
     platform: "reddit" as const,
-    postedAt: new Date((post.created_utc || 0) * 1000),
+    postedAt: post.publishedAt,
     platformMetadata,
     links: normalizedLinks,
   };
 }
 
-async function fetchSubredditPosts(subreddit: string): Promise<Post[]> {
-  const response = await fetch(
-    `https://www.reddit.com/r/${subreddit}/new.json`,
-    { headers: { "User-Agent": "vidik-augment-cron/0.1" } },
-  );
+export async function linkRedditPosts(): Promise<Post[]> {
+  const response = await fetch(FEED_URL, {
+    headers: { "User-Agent": USER_AGENT },
+  });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch ${subreddit}: ${response.statusText}`);
+    console.error(
+      `Failed to fetch Reddit feed: ${response.status} ${response.statusText}`,
+    );
+    return [];
   }
 
-  const data = (await response.json()) as {
-    data: { children: Array<{ data: RedditPostData }> };
-  };
-  const posts = data.data.children.map((child) => child.data);
-
-  return posts.map((post) => extractLinksFromPost(post, subreddit));
-}
-
-export async function linkRedditPosts(): Promise<Post[]> {
-  const responses = await Promise.allSettled(
-    SUBREDDITS.map((subreddit) => fetchSubredditPosts(subreddit)),
-  );
-
-  const successes = responses.filter((res) => res.status === "fulfilled");
-  const failures = responses.filter((res) => res.status === "rejected");
-
-  console.log(`Fetched ${successes.length} subreddits successfully.`);
-  console.log(`Failed to fetch ${failures.length} subreddits.`);
-
-  const allPosts: Post[] = [];
-  successes.forEach((result) => {
-    allPosts.push(...result.value);
-  });
-
-  failures.forEach((result, index) => {
-    console.error(`Failed to fetch subreddit ${index}:`, result.reason);
-  });
+  const allPosts = parseFeed(await response.text()).map(extractLinksFromPost);
 
   const redditPosts = Array.from(
     new Map(allPosts.map((post) => [post.url, post])).values(),

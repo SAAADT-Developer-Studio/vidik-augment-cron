@@ -1,0 +1,28 @@
+{
+  "$schema": "https://t3.codes/schema/t3.json",
+  "defaultThreadEnvMode": "worktree",
+  "scripts": [
+    {
+      "name": "Setup Worktree",
+      "command": "pnpm install --frozen-lockfile && for file in .env .env.local .dev.vars .dev.vars.local; do if [ -f \"${T3CODE_PROJECT_ROOT:?}/$file\" ] && [ ! -e \"$file\" ] && [ ! -L \"$file\" ]; then ln -s \"$T3CODE_PROJECT_ROOT/$file\" \"$file\" || exit 1; fi; done",
+      "icon": "configure",
+      "runOnWorktreeCreate": true,
+      "async": false
+    },
+    {
+      "name": "Dev (test cron)",
+      "command": "pnpm wrangler dev --test-scheduled",
+      "icon": "play"
+    },
+    {
+      "name": "Test",
+      "command": "pnpm test",
+      "icon": "test"
+    },
+    {
+      "name": "Tail prod logs",
+      "command": "pnpm wrangler tail vidik-augment-cron --format pretty",
+      "icon": "debug"
+    }
+  ]
+}
